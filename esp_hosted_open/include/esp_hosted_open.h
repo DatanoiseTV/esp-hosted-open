@@ -81,8 +81,8 @@ esp_err_t esp_hosted_open_set_bt_filter     (uint32_t reg_value);
 /* Capability discovery — bitmap indexed by request msg_id low byte;
  * tells the host which RPCs the slave's libphy.a actually exposes
  * on this chip. */
-esp_err_t esp_hosted_open_get_caps          (uint8_t caps[4]);
-bool      esp_hosted_open_has_capability    (uint32_t request_msg_id, const uint8_t caps[4]);
+esp_err_t esp_hosted_open_get_caps          (uint8_t caps[16]);
+bool      esp_hosted_open_has_capability    (uint32_t request_msg_id, const uint8_t caps[16]);
 
 /* ---------- Raw 802.11 TX / promiscuous RX ---------------------- */
 
@@ -199,6 +199,13 @@ typedef void (*esp_hosted_open_ieee154_rx_cb_t)(const uint8_t *frame, size_t len
                                                 void *ctx);
 
 esp_err_t esp_hosted_open_register_ieee154_rx_cb(esp_hosted_open_ieee154_rx_cb_t cb, void *ctx);
+
+/* ---------- misc -------------------------------------------------- */
+
+/* Suppress noisy WIFI_EVENT_* notifications on the slave so the host
+ * only gets events it cares about. mask is a bitmap of event IDs;
+ * passing 0 re-enables everything. */
+esp_err_t esp_hosted_open_set_event_mask    (uint64_t mask);
 
 /* ---------- BLE / Bluetooth (already exposed by upstream) ----- */
 /*

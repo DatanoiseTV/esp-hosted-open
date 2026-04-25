@@ -1,8 +1,8 @@
 if(IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/common")
 	set(common_dir "${CMAKE_CURRENT_SOURCE_DIR}/common")
-elseif(IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/esp-hosted-mcu/common")
-	# vendored layout: esp-hosted-open layout: slave/main/ -> ../../vendor/esp-hosted-mcu/common
-	set(common_dir "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/esp-hosted-mcu/common")
+elseif(IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/esp_hosted/common")
+	# vendored layout: esp-hosted-open layout: slave/main/ -> ../../vendor/esp_hosted/common
+	set(common_dir "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/esp_hosted/common")
 else()
 	set(common_dir "../../common")
 endif()

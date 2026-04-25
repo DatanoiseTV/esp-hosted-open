@@ -115,6 +115,20 @@ extern "C" {
 #define PHY_RPC_REQ_IEEE154_SET_PROMISC PHY_RPC_MSG_REQ(0x043) /* uint8_t */
 #define PHY_RPC_REQ_IEEE154_TX_RAW    PHY_RPC_MSG_REQ(0x044)  /* raw frame */
 
+/* Wi-Fi event-mask suppression */
+#define PHY_RPC_REQ_SET_EVENT_MASK    PHY_RPC_MSG_REQ(0x027)  /* uint64_t mask */
+
+/* Reserved for BT-radio shockburst (nRF24L01+ emulation). The TX-gain
+ * knob (PHY_RPC_REQ_SET_BT_TX_GAIN) and filter override
+ * (PHY_RPC_REQ_SET_BT_FILTER) are wired; the rest of the sequence
+ * (preamble bytes, address registers, CRC mode, raw burst TX) needs
+ * scope-confirmed RE before slave handlers can land. msg_id slots are
+ * reserved here so the wire protocol stays stable when they ship. */
+#define PHY_RPC_REQ_BT_SET_PREAMBLE   PHY_RPC_MSG_REQ(0x050)  /* TBD */
+#define PHY_RPC_REQ_BT_SET_ADDRESS    PHY_RPC_MSG_REQ(0x051)  /* TBD */
+#define PHY_RPC_REQ_BT_SET_CRC_MODE   PHY_RPC_MSG_REQ(0x052)  /* TBD */
+#define PHY_RPC_REQ_BT_BURST_TX       PHY_RPC_MSG_REQ(0x053)  /* TBD */
+
 /* Response IDs (slave->host, sent via esp_hosted_send_custom_data
  * AFTER processing the matching request). Each carries a header with
  * the original op_id and an int32 status. */
@@ -168,6 +182,12 @@ extern "C" {
 #define PHY_RPC_RESP_IEEE154_SET_PANID    PHY_RPC_MSG_RESP(0x042)
 #define PHY_RPC_RESP_IEEE154_SET_PROMISC  PHY_RPC_MSG_RESP(0x043)
 #define PHY_RPC_RESP_IEEE154_TX_RAW       PHY_RPC_MSG_RESP(0x044)
+
+#define PHY_RPC_RESP_SET_EVENT_MASK       PHY_RPC_MSG_RESP(0x027)
+#define PHY_RPC_RESP_BT_SET_PREAMBLE      PHY_RPC_MSG_RESP(0x050)
+#define PHY_RPC_RESP_BT_SET_ADDRESS       PHY_RPC_MSG_RESP(0x051)
+#define PHY_RPC_RESP_BT_SET_CRC_MODE      PHY_RPC_MSG_RESP(0x052)
+#define PHY_RPC_RESP_BT_BURST_TX          PHY_RPC_MSG_RESP(0x053)
 
 /* Async events (slave->host, no request/response correlation) */
 #define PHY_RPC_EVT_OCB_FRAME        PHY_RPC_MSG_EVT(0x001)  /* OCB-filtered LLC payload (V2X) */
@@ -391,6 +411,11 @@ typedef struct __attribute__((packed)) {
     uint8_t        frame[];
 } phy_rpc_req_ieee154_tx_raw_t;
 
+typedef struct __attribute__((packed)) {
+    phy_rpc_hdr_t hdr;
+    uint64_t       mask;          /* bitmap of WIFI_EVENT_* IDs to suppress */
+} phy_rpc_req_set_event_mask_t;
+
 /* Response bodies (after phy_rpc_resp_hdr_t) */
 
 typedef struct __attribute__((packed)) {
@@ -419,14 +444,16 @@ typedef struct __attribute__((packed)) {
     int8_t              celsius;
 } phy_rpc_resp_get_temperature_t;
 
-/* GET_CAPS reports which RPCs the slave's libphy.a actually exposes
- * on this chip — bit n is set iff request id (PHY_RPC_MSG_BASE | n) is
- * wired and the underlying symbol resolved at link time. The host
- * uses this to gracefully degrade. caps[0] covers msg ids 0x000-0x007,
- * caps[1] covers 0x008-0x00F, ..., caps[3] covers 0x018-0x01F. */
+/* GET_CAPS reports which RPCs the slave actually exposes on this
+ * chip — bit n of caps[] is set iff request id (PHY_RPC_MSG_BASE | n)
+ * is wired and the underlying symbol resolved at link time. The host
+ * uses this to gracefully degrade. 16 bytes covers msg ids
+ * 0x000-0x07F, which fits the current namespace plus all currently
+ * reserved future slots. */
+#define PHY_RPC_CAPS_BYTES 16
 typedef struct __attribute__((packed)) {
     phy_rpc_resp_hdr_t hdr;
-    uint8_t             caps[4];
+    uint8_t             caps[PHY_RPC_CAPS_BYTES];
 } phy_rpc_resp_get_caps_t;
 
 typedef struct __attribute__((packed)) {

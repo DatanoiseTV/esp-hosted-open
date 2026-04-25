@@ -324,6 +324,7 @@ esp_err_t esp_hosted_open_init(void)
         PHY_RPC_RESP_IEEE154_ENABLE,     PHY_RPC_RESP_IEEE154_SET_CHAN,
         PHY_RPC_RESP_IEEE154_SET_PANID,  PHY_RPC_RESP_IEEE154_SET_PROMISC,
         PHY_RPC_RESP_IEEE154_TX_RAW,
+        PHY_RPC_RESP_SET_EVENT_MASK,
     };
     for (size_t i = 0; i < sizeof(resp_ids) / sizeof(*resp_ids); i++) {
         esp_err_t err = esp_hosted_register_custom_callback(resp_ids[i], on_response, NULL);
@@ -552,19 +553,21 @@ esp_err_t esp_hosted_open_set_bt_filter(uint32_t reg_value)
                    &reg_value, sizeof(reg_value), NULL, 0, NULL);
 }
 
-esp_err_t esp_hosted_open_get_caps(uint8_t caps[4])
+esp_err_t esp_hosted_open_get_caps(uint8_t caps[16])
 {
     if (!caps) return ESP_ERR_INVALID_ARG;
+    memset(caps, 0, 16);
     size_t got = 0;
     return do_call(PHY_RPC_REQ_GET_CAPS, PHY_RPC_RESP_GET_CAPS,
-                   NULL, 0, caps, 4, &got);
+                   NULL, 0, caps, PHY_RPC_CAPS_BYTES, &got);
 }
 
-bool esp_hosted_open_has_capability(uint32_t request_msg_id, const uint8_t caps[4])
+bool esp_hosted_open_has_capability(uint32_t request_msg_id, const uint8_t caps[16])
 {
-    /* Low byte of msg_id is the index into our cap bitmap (0x000–0x01F). */
+    /* Low byte of msg_id is the bit index into our cap bitmap. 16 bytes
+     * × 8 bits = 128 slots, covering msg ids 0x00–0x7F. */
     uint32_t low = request_msg_id & 0xFFu;
-    if (low > 0x1F) return false;
+    if (low >= PHY_RPC_CAPS_BYTES * 8) return false;
     return (caps[low / 8] & (1u << (low % 8))) != 0;
 }
 
@@ -723,6 +726,12 @@ esp_err_t esp_hosted_open_ieee154_set_pan_id(uint16_t pan_id)
 
 esp_err_t esp_hosted_open_ieee154_set_promiscuous(bool enable)
 { ONE_BYTE_REQ(PHY_RPC_REQ_IEEE154_SET_PROMISC, PHY_RPC_RESP_IEEE154_SET_PROMISC, uint8_t, enable ? 1 : 0); }
+
+esp_err_t esp_hosted_open_set_event_mask(uint64_t mask)
+{
+    return do_call(PHY_RPC_REQ_SET_EVENT_MASK, PHY_RPC_RESP_SET_EVENT_MASK,
+                   &mask, sizeof(mask), NULL, 0, NULL);
+}
 
 esp_err_t esp_hosted_open_ieee154_tx_raw(const uint8_t *frame, size_t len, bool cca)
 {

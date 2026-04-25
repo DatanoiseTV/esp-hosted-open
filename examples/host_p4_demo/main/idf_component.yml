@@ -1,0 +1,10 @@
+## Pulls esp_wifi_remote (and its deps eppp_link / esp_serial_slave_link /
+## wifi_remote_over_eppp) from the registry, but overrides esp_hosted to
+## use the vendored copy two levels up.
+dependencies:
+  idf:
+    version: ">=5.5"
+  espressif/esp_wifi_remote:
+    version: "1.5.1"
+  espressif/esp_hosted:
+    override_path: "../../../vendor/esp_hosted"

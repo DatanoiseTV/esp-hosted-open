@@ -8,7 +8,7 @@ idf_component_register(
         "."
         # The shared wire protocol lives in the parent repo so host and
         # slave share one source of truth for msg_ids and packed structs.
-        "${CMAKE_CURRENT_LIST_DIR}/../../../host/include"
+        "${CMAKE_CURRENT_LIST_DIR}/../../../esp_hosted_open/include"
     REQUIRES esp_wifi esp_event nvs_flash main
 )
 

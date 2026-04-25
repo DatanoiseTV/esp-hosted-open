@@ -212,6 +212,36 @@ static void on_i154_tx_raw(uint32_t msg_id, const uint8_t *data, size_t len, voi
     send_simple_resp(PHY_RPC_RESP_IEEE154_TX_RAW, _op, st);
 }
 
+/* ---------- caps reporting ------------------------------------- */
+
+#define MARK(caps, req_id)                                           \
+    do { uint32_t low = (req_id) & 0xFFu;                            \
+         if (low < PHY_RPC_CAPS_BYTES * 8)                           \
+             (caps)[low / 8] |= 1u << (low % 8); } while (0)
+
+void phy_rpc_wireless_fill_caps(uint8_t caps[PHY_RPC_CAPS_BYTES])
+{
+    /* ESP-NOW: public API, present on every Wi-Fi chip. */
+    MARK(caps, PHY_RPC_REQ_ESPNOW_INIT);
+    MARK(caps, PHY_RPC_REQ_ESPNOW_DEINIT);
+    MARK(caps, PHY_RPC_REQ_ESPNOW_ADD_PEER);
+    MARK(caps, PHY_RPC_REQ_ESPNOW_DEL_PEER);
+    MARK(caps, PHY_RPC_REQ_ESPNOW_SEND);
+    MARK(caps, PHY_RPC_REQ_ESPNOW_SET_PMK);
+
+    /* 802.15.4: weak-linked. Only mark present on chips that ship the
+     * radio (C6/H2/H4 — esp_ieee802154_enable resolves there). */
+    if (esp_ieee802154_enable) {
+        MARK(caps, PHY_RPC_REQ_IEEE154_ENABLE);
+        MARK(caps, PHY_RPC_REQ_IEEE154_SET_CHAN);
+        MARK(caps, PHY_RPC_REQ_IEEE154_SET_PANID);
+        MARK(caps, PHY_RPC_REQ_IEEE154_SET_PROMISC);
+        MARK(caps, PHY_RPC_REQ_IEEE154_TX_RAW);
+    }
+}
+
+#undef MARK
+
 /* ---------- registration --------------------------------------- */
 
 void phy_rpc_wireless_register(void)

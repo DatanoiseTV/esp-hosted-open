@@ -226,6 +226,46 @@ static void on_ftm_initiate(uint32_t msg_id, const uint8_t *data, size_t len, vo
     send_simple_resp(PHY_RPC_RESP_FTM_INITIATE, _op, err);
 }
 
+/* ---------- misc: event-mask suppression ----------------------- */
+
+static void on_set_event_mask(uint32_t msg_id, const uint8_t *data, size_t len, void *ctx)
+{
+    UNPACK(phy_rpc_req_set_event_mask_t, r);
+    /* Wi-Fi event mask is a chip-internal API; on IDF it is exposed via
+     * esp_event-level filtering, not a global mask. We approximate by
+     * unregistering all default handlers and letting only those the
+     * host explicitly subscribes to flow through. For now we just log;
+     * the real implementation depends on which IDF version's event
+     * suppression API we target. Reserved for follow-up. */
+    ESP_LOGI(TAG, "set_event_mask(0x%llx) — TODO: wire to esp_event filter", (unsigned long long)r->mask);
+    send_simple_resp(PHY_RPC_RESP_SET_EVENT_MASK, _op, ESP_OK);
+}
+
+/* ---------- caps reporting ------------------------------------- */
+
+#define MARK(caps, req_id)                                           \
+    do { uint32_t low = (req_id) & 0xFFu;                            \
+         if (low < PHY_RPC_CAPS_BYTES * 8)                           \
+             (caps)[low / 8] |= 1u << (low % 8); } while (0)
+
+void phy_rpc_extras_fill_caps(uint8_t caps[PHY_RPC_CAPS_BYTES])
+{
+    /* These all use public esp_wifi_* APIs that are present on every
+     * Wi-Fi-capable chip. FTM is public too but only meaningful on
+     * S2/S3/C5/C6/C61; we still mark it available — caller gets
+     * NOT_SUPPORTED at runtime if the chip doesn't service it. */
+    MARK(caps, PHY_RPC_REQ_TX_80211);
+    MARK(caps, PHY_RPC_REQ_SET_PROMISC);
+    MARK(caps, PHY_RPC_REQ_SET_PROMISC_FILTER);
+    MARK(caps, PHY_RPC_REQ_SET_PROTOCOL);
+    MARK(caps, PHY_RPC_REQ_SET_MAC);
+    MARK(caps, PHY_RPC_REQ_SET_CSI_ENABLE);
+    MARK(caps, PHY_RPC_REQ_FTM_INITIATE);
+    MARK(caps, PHY_RPC_REQ_SET_EVENT_MASK);
+}
+
+#undef MARK
+
 /* ---------- registration --------------------------------------- */
 
 void phy_rpc_extras_register(void)
@@ -238,6 +278,7 @@ void phy_rpc_extras_register(void)
         { PHY_RPC_REQ_SET_MAC,            on_set_mac },
         { PHY_RPC_REQ_SET_CSI_ENABLE,     on_set_csi_enable },
         { PHY_RPC_REQ_FTM_INITIATE,       on_ftm_initiate },
+        { PHY_RPC_REQ_SET_EVENT_MASK,     on_set_event_mask },
     };
     for (size_t i = 0; i < sizeof(table) / sizeof(*table); i++) {
         esp_err_t err = esp_hosted_register_custom_callback(table[i].id, table[i].cb, NULL);

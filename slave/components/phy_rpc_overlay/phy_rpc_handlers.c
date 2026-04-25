@@ -397,12 +397,14 @@ static void on_get_caps(uint32_t msg_id, const uint8_t *data, size_t len, void *
 {
     if (len < sizeof(phy_rpc_hdr_t)) return;
     uint32_t op = ((phy_rpc_hdr_t *)data)->op_id;
-    uint8_t caps[4] = {0};
+    uint8_t caps[PHY_RPC_CAPS_BYTES] = {0};
     /* Helper: if the underlying symbol resolved, set the bit for this
-     * request id. Bit n of caps[] is request id (BASE | n) availability. */
+     * request id. Bit n of caps[] is request id (BASE | n) availability.
+     * 16 bytes × 8 bits = 128 slots, covering msg ids 0x00–0x7F. */
     #define MARK(req_id, present)                                            \
         do { uint32_t low = (req_id) & 0xFFu;                                \
-             if (low <= 0x1F && (present)) caps[low / 8] |= 1u << (low % 8); } while (0)
+             if (low < PHY_RPC_CAPS_BYTES * 8 && (present))                  \
+                 caps[low / 8] |= 1u << (low % 8); } while (0)
 
     /* Always-on: covered by esp_wifi public API. */
     MARK(PHY_RPC_REQ_SET_CHANNEL,        phy_change_channel != NULL);
@@ -435,6 +437,12 @@ static void on_get_caps(uint32_t msg_id, const uint8_t *data, size_t len, void *
     MARK(PHY_RPC_REQ_SET_BT_TX_GAIN,     (phy_bt_set_tx_gain_new != NULL || phy_bt_tx_gain_set != NULL));
     MARK(PHY_RPC_REQ_SET_BT_FILTER,      phy_bt_filter_reg != NULL);
     #undef MARK
+
+    /* Each sibling module fills in the bits for the RPCs it owns. */
+    extern void phy_rpc_extras_fill_caps  (uint8_t caps[PHY_RPC_CAPS_BYTES]);
+    extern void phy_rpc_wireless_fill_caps(uint8_t caps[PHY_RPC_CAPS_BYTES]);
+    phy_rpc_extras_fill_caps(caps);
+    phy_rpc_wireless_fill_caps(caps);
 
     send_resp_with_body(PHY_RPC_RESP_GET_CAPS, op, ESP_OK, caps, sizeof(caps));
 }

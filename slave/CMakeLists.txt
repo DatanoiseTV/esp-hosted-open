@@ -29,8 +29,8 @@ list(APPEND EXTRA_COMPONENT_DIRS "${CMAKE_CURRENT_LIST_DIR}/components/phy_rpc_o
 project(network_adapter)
 idf_build_set_property(COMPILE_OPTIONS "-fdiagnostics-color=always" APPEND)
 
-if(EXISTS "${PROJECT_DIR}/../vendor/esp-hosted-mcu/common")
-    set(common_dir "${PROJECT_DIR}/../vendor/esp-hosted-mcu/common")
+if(EXISTS "${PROJECT_DIR}/../vendor/esp_hosted/common")
+    set(common_dir "${PROJECT_DIR}/../vendor/esp_hosted/common")
     message(STATUS "common (vendored): ${common_dir}")
 elseif(EXISTS "${PROJECT_DIR}/../common")
     set(common_dir "${PROJECT_DIR}/../common")

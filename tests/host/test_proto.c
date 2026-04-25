@@ -130,16 +130,21 @@ int test_proto_msgid_namespace(void)
 }
 
 /* The slave's GET_CAPS response packs availability of each request id
- * into a 4-byte bitmap: bit (id & 0xFF) of caps[(id&0xFF)/8]. Make sure
- * the host's helper agrees with that layout. */
+ * into a 16-byte bitmap: bit (id & 0xFF) of caps[(id&0xFF)/8]. 16 bytes
+ * = 128 slots, covering msg ids 0x00–0x7F. */
 int test_proto_caps_bitmap(void)
 {
-    /* Pretend the slave replied "everything available". */
-    uint8_t all_on[4] = {0xff, 0xff, 0xff, 0xff};
+    /* The proto exposes its own bitmap-size constant. */
+    EXPECT(PHY_RPC_CAPS_BYTES == 16);
+    EXPECT(sizeof(((phy_rpc_resp_get_caps_t *)0)->caps) == 16);
 
-    /* Pretend the slave replied "nothing in 0x10-0x1F" (e.g. an older
-     * chip with only the original 13 RPCs). */
-    uint8_t old_chip[4] = {0xff, 0x3f, 0x00, 0x00};
+    uint8_t all_on[16];
+    for (size_t i = 0; i < 16; i++) all_on[i] = 0xff;
+
+    uint8_t old_chip[16] = {0};
+    /* Pretend it has the original PHY hacks (0x000-0x00F) only. */
+    old_chip[0] = 0xff;
+    old_chip[1] = 0xff;
 
     /* SET_CHANNEL (id 0x001) -> bit 1 of caps[0] */
     EXPECT((all_on[0]    & (1u << 1)) != 0);
@@ -149,9 +154,16 @@ int test_proto_caps_bitmap(void)
     EXPECT((all_on[3]    & (1u << 6)) != 0);
     EXPECT((old_chip[3]  & (1u << 6)) == 0);
 
-    /* SET_FREQ (id 0x010) -> bit 0 of caps[2] */
-    EXPECT((all_on[2]    & (1u << 0)) != 0);
-    EXPECT((old_chip[2]  & (1u << 0)) == 0);
+    /* TX_80211 (id 0x020) -> bit 0 of caps[4] — *previously unreachable*
+     * with the old 4-byte bitmap. */
+    EXPECT((all_on[4]    & (1u << 0)) != 0);
+    EXPECT((old_chip[4]  & (1u << 0)) == 0);
+
+    /* ESPNOW_INIT (id 0x030) -> bit 0 of caps[6] */
+    EXPECT((all_on[6]    & (1u << 0)) != 0);
+
+    /* IEEE154_ENABLE (id 0x040) -> bit 0 of caps[8] */
+    EXPECT((all_on[8]    & (1u << 0)) != 0);
 
     return 0;
 }
