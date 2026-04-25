@@ -1,0 +1,15 @@
+Vendored from: https://github.com/espressif/esp-hosted-mcu
+Upstream commit: f99ee55aea93ab671d9849bd962aa2f10d01f7d5
+Vendored on:     2026-04-25
+
+Dropped from upstream tree to keep the repo lean:
+  - docs/      (8.4 MB; refer to upstream README and online docs)
+  - examples/  (replaced by examples/p4_c5_hosted/ in this repo)
+  - tools/     (release tooling not needed in-tree)
+
+License: see LICENSE.
+
+Local patches live in components/esp_hosted_cits_ext/ as a sibling
+extension. Upstream files in this directory are kept clean to make
+rebases trivial — when the upstream component bumps version, copy
+over a fresh tree (minus the dirs above) and re-vet the extension.

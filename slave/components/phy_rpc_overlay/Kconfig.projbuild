@@ -1,0 +1,32 @@
+menu "C5 V2X slave (PHY hack overlay)"
+
+choice PHY_RPC_OVERLAY_CHANNEL
+    prompt "ITS channel for the slave to lock to"
+    default PHY_RPC_OVERLAY_CHANNEL_CCH
+    config PHY_RPC_OVERLAY_CHANNEL_SCH2
+        bool "SCH2 (172, 5860 MHz)"
+    config PHY_RPC_OVERLAY_CHANNEL_SCH1
+        bool "SCH1 (174, 5870 MHz)"
+    config PHY_RPC_OVERLAY_CHANNEL_SCH4
+        bool "SCH4 (178, 5890 MHz)"
+    config PHY_RPC_OVERLAY_CHANNEL_CCH
+        bool "CCH (180, 5900 MHz)"
+    config PHY_RPC_OVERLAY_CHANNEL_SCH5
+        bool "SCH5 (182, 5910 MHz)"
+    config PHY_RPC_OVERLAY_CHANNEL_SCH6
+        bool "SCH6 (184, 5920 MHz)"
+endchoice
+
+config PHY_RPC_OVERLAY_CHANNEL
+    int
+    default 172 if PHY_RPC_OVERLAY_CHANNEL_SCH2
+    default 174 if PHY_RPC_OVERLAY_CHANNEL_SCH1
+    default 178 if PHY_RPC_OVERLAY_CHANNEL_SCH4
+    default 180 if PHY_RPC_OVERLAY_CHANNEL_CCH
+    default 182 if PHY_RPC_OVERLAY_CHANNEL_SCH5
+    default 184 if PHY_RPC_OVERLAY_CHANNEL_SCH6
+
+config PHY_RPC_OVERLAY_REAPPLY_ON_WIFI_READY
+    bool "Re-apply phy_11p_set on every WIFI_EVENT_WIFI_READY"
+    default y
+endmenu

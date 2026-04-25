@@ -1,0 +1,30 @@
+# IDF build outputs
+build/
+sdkconfig
+sdkconfig.old
+sdkconfig.ci
+dependencies.lock
+managed_components/
+
+# Host tests
+tests/host/build/
+
+# Editor / tool config
+.vscode/
+.cache/
+.idea/
+compile_commands.json
+
+# Claude Code local state
+.claude/
+
+# OS junk
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Misc
+*.elf
+*.map

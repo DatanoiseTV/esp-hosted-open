@@ -1,0 +1,30 @@
+# Local overrides on top of upstream esp-hosted-mcu slave defaults.
+CONFIG_IDF_TARGET="esp32c5"
+
+# Disable upstream's app_main — our phy_rpc_overlay component provides one.
+# CONFIG_ESP_HOSTED_COPROCESSOR_APP_MAIN is not set
+
+# Enable the custom-data RPC channel (carries our phy_rpc_*_REQ/RESP/EVT msg_ids).
+CONFIG_ESP_HOSTED_ENABLE_PEER_DATA_TRANSFER=y
+CONFIG_ESP_HOSTED_MAX_CUSTOM_MSG_HANDLERS=16
+
+# SDIO slave transport (matches the host's CONFIG_ESP_HOSTED_SDIO_HOST=y).
+CONFIG_ESP_SDIO_HOST_INTERFACE=y
+
+# We don't need the network-split / lwIP layer on the slave for our
+# purposes — frames flow straight through esp-hosted's promiscuous path.
+# CONFIG_ESP_HOSTED_NETWORK_SPLIT_ENABLED is not set
+
+# 5 GHz band on
+CONFIG_ESP_WIFI_5GHZ_ENABLED=y
+
+# Bigger RX buffers; AMPDU off
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=64
+CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=n
+CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=n
+
+CONFIG_FREERTOS_HZ=1000
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# Slave's stock partitions.esp32c5.csv expects a 4 MB chip.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y

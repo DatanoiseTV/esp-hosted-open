@@ -1,0 +1,56 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+
+jobs:
+  host-tests:
+    name: host tests (no IDF)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make -C tests/host test
+
+  slave:
+    name: build slave firmware
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:release-v5.5
+    steps:
+      - uses: actions/checkout@v4
+      - name: idf.py set-target esp32c5
+        working-directory: slave
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py set-target esp32c5
+      - name: idf.py build
+        working-directory: slave
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py build
+      - name: merge image
+        working-directory: slave
+        run: |
+          . $IDF_PATH/export.sh
+          esptool --chip esp32c5 merge-bin \
+            -o build/c5_slave_merged.bin \
+            --flash-mode dio --flash-size 4MB --flash-freq 80m \
+            0x2000 build/bootloader/bootloader.bin \
+            0xc000 build/partition_table/partition-table.bin \
+            0x16000 build/ota_data_initial.bin \
+            0x20000 build/network_adapter.bin
+          shasum -a 256 build/c5_slave_merged.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c5_slave_merged
+          path: slave/build/c5_slave_merged.bin
+          retention-days: 90
+      - name: attach to release (tags only)
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: slave/build/c5_slave_merged.bin
