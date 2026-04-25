@@ -1,18 +1,25 @@
 # esp-hosted-open
 
-**A patched fork of [esp-hosted-mcu] that lets a host MCU drive the radio
-of an ESP32-C5 co-processor at a level Espressif's stock firmware
-deliberately hides.**
+**A patched fork of [esp-hosted-mcu] that lets a host MCU drive
+*every* radio of an Espressif co-processor — including the parts
+Espressif's stock firmware deliberately hides.**
 
 [esp-hosted-mcu]: https://github.com/espressif/esp-hosted-mcu
 
-Stock esp-hosted gives you `esp_wifi_*` over SDIO. That's wonderful for
-making a P4 act like a Wi-Fi STA, and useless if what you actually want
-is a 5.9 GHz V2X radio, a monitor-mode sensor, a sub-GHz hack, an SDR
-trigger, or anything else that lives below the regulated API surface.
-This fork carries one extra component (`phy_rpc_overlay/`) and a host-
-side stub library; together they ship a tiny custom RPC channel that
-exposes the **undocumented PHY symbols** in `libphy.a` to the host.
+Stock esp-hosted gives you `esp_wifi_*` over SDIO. That's wonderful
+for making a P4 act like a Wi-Fi STA, and useless if what you actually
+want is a 5.9 GHz V2X radio, a monitor-mode sensor, an ESP-NOW peer,
+a Thread/Zigbee co-processor, an FTM ranging master, a CSI sensor, or
+anything else that lives below the regulated `esp_wifi_*` surface.
+
+This fork keeps upstream esp-hosted-mcu *untouched* in `vendor/` and
+adds:
+
+- one slave-side overlay component (`phy_rpc_overlay/`) that calls
+  into `libphy.a` directly,
+- one host-side stub library (`esp_hosted_open`) that ships **46
+  request RPCs and 8 async event channels** over esp-hosted's
+  generic peer-data transport.
 
 ---
 
@@ -26,107 +33,40 @@ Read this carefully.
 | **Regulatory risk is on you.** | This firmware will happily tune to 5.9 GHz ITS channels, disable carrier sense, override the regulatory country database, and force RX gain past safe operating limits. Doing any of that on the air without a license is illegal almost everywhere. Use a shielded enclosure, a fully-cabled setup with attenuators, or a regulator-issued research permit. |
 | **Not safety-certified.** | Don't put this in a vehicle, drone, ISM-band product, medical device, or anything else that hurts people or property when it misbehaves. We provide no warranty, express or implied — Apache-2.0, "AS IS". |
 | **Don't blame Espressif.** | The bugs you find here are *ours*, not theirs. Don't open issues against esp-hosted-mcu or the IDF for behaviour we introduced. |
-| **Spectrum manners.** | If you actually emit on the air, do it deliberately, briefly, and on bands you're entitled to. Stomping on real V2X traffic is dangerous; stomping on real Wi-Fi is rude. |
+| **Spectrum manners.** | If you actually emit on the air, do it deliberately, briefly, and on bands you're entitled to. Stomping on real V2X traffic is dangerous; stomping on real Wi-Fi or Zigbee is rude. |
 
 By using this code you accept that you alone are responsible for any
 RF emissions and for compliance with your local regulations.
 
 ---
 
-## What you get
+## All wireless tech the silicon can do
 
-A drop-in replacement for the upstream esp-hosted "host" component
-plus a slave overlay, with these additional capabilities:
+This repo aims to expose **everything** the chip can transmit and
+receive, not just regular Wi-Fi:
 
-```c
-#include "esp_hosted.h"          /* upstream */
-#include "esp_hosted_open.h"     /* this fork */
+| Stack            | Coverage                                                                          | Where         |
+|------------------|-----------------------------------------------------------------------------------|---------------|
+| 802.11 a/g/n/ax  | channel/freq/band/bandwidth/rate, raw TX, promiscuous RX with filter, MAC override, protocol selection | this repo |
+| 802.11p OCB      | best-effort via `phy_11p_set` + `phy_change_channel(172..184)`                    | this repo     |
+| 802.11mc FTM     | initiator API + per-burst report event (rtt_raw, rtt_est, dist_est)               | this repo     |
+| CSI sensing      | `phy_csidump_force_lltf_cfg` + per-frame CSI capture event                        | this repo     |
+| ESP-NOW          | full lifecycle: init/peers/send + RX/TX-status events                             | this repo     |
+| 802.15.4 / Thread / Zigbee | enable, channel (11–26), pan ID, promisc, raw TX + RX events. Works on C6/H2/H4; returns `NOT_SUPPORTED` on C5/S2/S3/C2/C3 | this repo |
+| Bluetooth LE / HCI | full HCI bridge + Bluedroid stack                                               | upstream esp-hosted (`esp_hosted_bt.h`, `esp_hosted_bluedroid.h`) |
+| BT-radio low-level | `phy_bt_set_tx_gain_new`, `phy_bt_filter_reg` (for nRF24L01+-style hacks)        | this repo (partial — full shockburst sequencer pending) |
 
-esp_hosted_init();
-esp_hosted_open_init();
+Runtime **capability discovery** lets the same host code work
+unchanged across chip choices: `esp_hosted_open_get_caps(caps)`
+returns a 4-byte bitmap, and `esp_hosted_open_has_capability(REQ_ID, caps)`
+tells you whether the slave's firmware actually exposes that RPC. Swap
+a C5 slave for a C6 and Thread support lights up automatically while
+the 5 GHz / 802.11p calls start returning `NOT_SUPPORTED`.
 
-esp_hosted_open_set_country_permissive();   /* "01", manual policy */
-esp_hosted_open_set_phy_11p(true);          /* phy_11p_set(1, 0)   */
-esp_hosted_open_set_channel(180);           /* phy_change_channel  */
-esp_hosted_open_set_agc_max_gain(255);
-esp_hosted_open_set_low_rate(false);        /* let 6 Mbps QPSK pass */
-esp_hosted_open_set_cca(false);             /* loopback only        */
+For the universal map of **which `libphy.a` symbol is exported on
+which chip**, see [docs/symbol-reference.md](docs/symbol-reference.md).
 
-int8_t rssi;
-esp_hosted_open_get_phy_rssi(&rssi);
-```
-
-Each call rides over SDIO using esp-hosted's generic peer-data channel,
-hits a handler on the slave that calls into `libphy.a` directly, and
-returns synchronously with `esp_err_t`. The full set of RPCs today:
-
-| RPC                              | Slave-side action |
-|----------------------------------|-------------------|
-| `set_channel(uint8_t)`           | `phy_change_channel(ch, 1, 0, 0)` after `set_channel(140)` bootstrap |
-| `set_phy_11p(bool)`              | `phy_11p_set(en, 0)` |
-| `set_country_permissive()`       | `esp_wifi_set_country({"01", manual})` |
-| `set_tx_power(int8_t dBm)`       | `esp_wifi_set_max_tx_power` |
-| `set_rx_gain(uint8_t)`           | `phy_force_rx_gain` + AGC off (0xFF re-arms AGC) |
-| `set_agc_max_gain(uint8_t)`      | `phy_agc_max_gain_set` |
-| `set_cca(bool)`                  | `phy_enable_cca` / `phy_disable_cca` |
-| `get_cca_counters(busy, total)`  | `phy_get_cca_cnt` |
-| `reset_cca_counters()`           | `phy_set_cca_cnt(0)` |
-| `set_low_rate(bool)`             | `phy_disable_low_rate` / `phy_enable_low_rate` |
-| `set_bandwidth(20\|40)`          | `phy_bb_bss_cbw40` |
-| `get_phy_rssi(int8_t *)`         | `phy_get_sigrssi` (fallback `phy_get_rssi`) |
-| `get_info(...)`                  | dumps current slave state for debugging |
-
-Plus async event channels from slave to host for forwarding raw 802.11
-frames, CSI captures, FTM reports, ESP-NOW receives, and 802.15.4
-frames (when running on a chip with that radio).
-
-### All wireless tech the C5 (and friends) can do
-
-This repo aims to expose **everything** the silicon can transmit and
-receive, not just Wi-Fi:
-
-| Stack            | Coverage                                    | Where |
-|------------------|---------------------------------------------|-------|
-| 802.11 a/g/n/ax  | full (channel, freq, band, bandwidth, rate, raw TX/RX, monitor) | this repo |
-| 802.11p OCB      | best-effort via `phy_11p_set` + `phy_change_channel`             | this repo |
-| 802.11mc FTM     | initiator API + report event                                     | this repo |
-| ESP-NOW          | init, peers, send, RX/TX events                                  | this repo |
-| 802.15.4 / Thread / Zigbee | enable, channel (11–26), pan id, promisc, TX raw, RX events. Works on C6/H2/H4; returns NOT_SUPPORTED on C5/S2/S3/C2/C3 | this repo |
-| Bluetooth LE / HCI | full HCI bridge (`esp_hosted_bt.h`) and Bluedroid stack (`esp_hosted_bluedroid.h`) | upstream esp-hosted |
-
-The C5 itself is Wi-Fi 6 + BLE only (no 802.15.4 silicon), so
-`ieee802154_*` calls return NOT_SUPPORTED on the prebuilt slave
-binary in `firmware/`. To use Thread/Zigbee, swap the slave for a C6
-or H2 module — the same host code works unchanged thanks to the
-runtime capability bitmap exposed by `get_caps`.
-
-## Architecture
-
-```
-       ┌──────────────────────────┐         ┌──────────────────────────┐
-       │   Host MCU (P4, S3, …)   │         │     ESP32-C5 slave       │
-       │                          │  SDIO   │                          │
-       │  your application code   │ ◄────► │  upstream esp-hosted      │
-       │  esp_hosted_open_*()     │  4-bit  │  + phy_rpc_overlay/       │
-       │                          │  50 MHz │     - phy_rpc_handlers.c  │
-       │      ┌────────────┐      │         │  + libphy.a (blob)        │
-       │      │ this repo's│      │         │                           │
-       │      │  host/     │      │         │      ┌────────────┐       │
-       │      └────────────┘      │         │      │ this repo's│       │
-       │                          │         │      │  slave/    │       │
-       └──────────────────────────┘         │      └────────────┘       │
-                                             └──────────────────────────┘
-                                                        │
-                                                        ▼
-                                            5 GHz radio: 4.9–5.95 GHz
-```
-
-The vendored upstream esp-hosted (under `vendor/esp-hosted-mcu/`) is
-kept verbatim so rebases against future upstream releases stay clean.
-All of our patches live in the sibling `slave/components/phy_rpc_overlay/`
-directory — *no upstream files are modified*. Same on the host side:
-our additional API is in a separate `host/` component layered on top
-of upstream's `esp_hosted` component via a normal `REQUIRES`.
+---
 
 ## Quick start
 
@@ -154,7 +94,7 @@ on every push and attached to release tags. It writes to flash offset
 Override these in your host project's `sdkconfig.defaults` if your
 hardware differs.
 
-### 3. Pull the host component
+### 3. Pull host + vendored upstream into your project
 
 ```yaml
 # main/idf_component.yml
@@ -164,17 +104,87 @@ dependencies:
     override_path: "../../components/vendor/esp-hosted-mcu"
 ```
 
-Vendor `esp-hosted-mcu/` and `host/` from this repo into your project
-under `components/vendor/` and `components/host/` respectively, or
-add them as a submodule. Then `REQUIRES esp_hosted_open` in your
-`main/CMakeLists.txt` and call the API.
+Copy `vendor/esp-hosted-mcu/` and `host/` from this repo into your
+project under `components/vendor/` and `components/host/`. Then
+`REQUIRES esp_hosted_open` in `main/CMakeLists.txt` and:
 
-A worked example lives in `examples/p4_set_channel/` (under 200 lines).
+```c
+#include "esp_hosted.h"          /* upstream — STA/AP/HCI/BLE       */
+#include "esp_hosted_open.h"     /* this fork — extra PHY + radios  */
 
-## What works, what's flaky, what's missing
+esp_hosted_init();               /* upstream link bring-up          */
+esp_hosted_open_init();          /* register our extra RPC handlers */
+
+/* Channel + 802.11p PHY toggle (C5 ITS-G5 example) */
+esp_hosted_open_set_country_permissive();
+esp_hosted_open_set_phy_11p(true);
+esp_hosted_open_set_channel(180);
+esp_hosted_open_set_agc_max_gain(255);
+esp_hosted_open_set_low_rate(false);
+
+/* Or send an ESP-NOW frame to a peer (works on every Wi-Fi chip) */
+esp_hosted_open_espnow_init();
+esp_hosted_open_espnow_add_peer(peer_mac, NULL, 0, 0, false);
+esp_hosted_open_espnow_send(peer_mac, "hello", 5);
+
+/* Or initiate FTM ranging */
+esp_hosted_open_register_ftm_cb(on_ftm_report, NULL);
+esp_hosted_open_ftm_initiate(ap_mac, /*frames*/16, /*period*/2, /*ch*/6);
+
+/* Or capture every 802.11 frame on the air */
+esp_hosted_open_register_raw_rx_cb(on_frame, NULL);
+esp_hosted_open_set_promisc_filter(WIFI_PROMIS_FILTER_MASK_ALL);
+esp_hosted_open_set_promisc(true);
+```
+
+The full API surface is documented in
+[`host/include/esp_hosted_open.h`](host/include/esp_hosted_open.h).
+
+---
+
+## Architecture
+
+```
+   ┌──────────────────────────┐  SDIO 4-bit  ┌────────────────────────────┐
+   │   Host MCU (P4, S3, …)   │   @ 50 MHz   │  Espressif co-processor    │
+   │                          │              │  (C5: Wi-Fi 6 + BLE)       │
+   │  your application code   │ ◄──────────► │  (C6: + 802.15.4)          │
+   │  esp_hosted_open_*()     │              │  (H2/H4: 15.4 + BLE only)  │
+   │                          │              │                            │
+   │  ┌──────────────────┐    │              │  upstream esp-hosted-mcu   │
+   │  │  this repo's     │    │              │  + slave/components/       │
+   │  │  host/           │    │              │      phy_rpc_overlay/      │
+   │  │  esp_hosted_open │    │              │    ├ phy_rpc_handlers.c    │
+   │  └──────────────────┘    │              │    ├ phy_rpc_extras.c      │
+   │  + upstream esp_hosted   │              │    └ phy_rpc_wireless.c    │
+   └──────────────────────────┘              │  + libphy.a (binary blob)  │
+                                              └────────────────────────────┘
+                                                          │
+                               ┌──────────────────────────┼──────────────────────────┐
+                               ▼                          ▼                          ▼
+                        2.4 GHz Wi-Fi          5 GHz Wi-Fi (C5/C61)        2.4 GHz BLE / 802.15.4
+                        ESP-NOW                ITS / V2X channels          (per-chip support)
+```
+
+The upstream esp-hosted snapshot (under `vendor/esp-hosted-mcu/`) is
+kept verbatim so rebases against future upstream releases stay
+trivial. **No upstream files are modified** — every patch lives in
+the sibling overlay directory. Same on the host side: our additions
+are a separate `host/` component layered on top of upstream's
+`esp_hosted` via a normal `REQUIRES`.
+
+The slave-side overlay is split across three files for review-ability:
+
+- `phy_rpc_handlers.c` — matrix-row PHY hacks (channel, gain, CCA, …)
+- `phy_rpc_extras.c` — raw 802.11 TX/RX, promiscuous, CSI, FTM, MAC, protocol
+- `phy_rpc_wireless.c` — ESP-NOW + 802.15.4
+
+---
+
+## What's covered today (and what isn't)
 
 ✅ **Verified building** against ESP-IDF v6.0 via CI on every push.
-Slave fits in the C5's 1.875 MB factory partition with 27 % free.
+Slave fits in the C5's 1.875 MB factory partition with 26 % free.
 Host stub adds ~150 B to a P4 binary.
 
 ✅ **Verified on hardware** (bench, conducted via 30 dB attenuator
@@ -192,51 +202,79 @@ that some 11p front-ends will demodulate.
 into states the FCC / ETSI test masks would fail. Lock down RF
 emission at the test-bench level, not in software.
 
-❌ **Not yet wrapped:** CSI capture (`esp_wifi_set_csi` +
-`phy_csidump_force_lltf_cfg`), raw 802.11 TX from host
-(`esp_wifi_80211_tx` over SDIO needs a passthrough), BT-radio
-shockburst (`phy_bt_*` family), 802.11mc FTM ranging. PRs welcome —
-the extension recipe in [docs/extending.md](docs/extending.md) is
-deliberately mechanical.
+❌ **Still missing** (PRs welcome — see
+[docs/extending.md](docs/extending.md) for the recipe):
+
+- A complete BT-radio shockburst sequencer (preamble + CRC + address
+  registers) for nRF24L01+ emulation. The TX-gain knob is wrapped
+  but the rest of the BT-PHY surface needs scope-confirmed RE.
+- Mesh / SmartConfig sniff hooks.
+- `esp_wifi_set_event_mask` (suppress noisy `WIFI_EVENT_*` on the
+  slave so the host only gets what it cares about).
+
+---
 
 ## Layout
 
 ```
-vendor/esp-hosted-mcu/          upstream snapshot, untouched
-slave/                          slave firmware project (esp32c5)
-  components/phy_rpc_overlay/   the actual fork patch
-host/                           host-side stub library (esp_hosted_open)
-firmware/                       prebuilt c5_slave_merged.bin + flash.sh
-tests/host/                     gcc-only tests for the wire protocol
-docs/                           extension recipe + symbol reference
-.github/workflows/build.yml     CI: host tests + slave + host examples
+vendor/esp-hosted-mcu/             upstream snapshot, untouched (Apache-2.0)
+slave/                             slave firmware project (esp32c5 default)
+  components/phy_rpc_overlay/      our fork patch — three files, see above
+host/                              host-side stub library (esp_hosted_open)
+  include/                         esp_hosted_open.h  +  phy_rpc_proto.h
+firmware/                          prebuilt c5_slave_merged.bin + flash.sh
+tests/host/                        gcc-only proto sanity checks
+docs/                              extension recipe + universal symbol map
+.github/workflows/build.yml        CI: host tests + slave + merged image
 ```
 
-## Use cases this enables (and one this repo hosts)
+Every wireless RPC's underlying libphy.a / IDF symbol is enumerated
+across all 10 Espressif chips in
+[docs/symbol-reference.md](docs/symbol-reference.md).
+
+---
+
+## Use cases this enables
 
 - **5.9 GHz / ITS-G5 / 802.11p** — protocol stack lives in
-  [esp32-c5-v2x](https://github.com/DatanoiseTV/esp32-c5-v2x) (CAM/DENM
-  encoders, GeoNetworking, BTP, asn1c-based codec). That repo depends on
-  this one for everything below the LLC layer.
-- **Channel-busy ratio (CBR) measurement** for spectrum studies
-- **Manual RX-gain sweeps** for sensitivity characterisation
-- **Disabling CCA** for back-to-back loopback or PHY conformance work
-- **Promiscuous capture of arbitrary EtherTypes** with the slave
-  forwarding raw frames to the host over the event channel
-- **Anything else** the public esp-hosted API doesn't reach. The
-  symbol reference in `docs/symbol-reference.md` lists what we've
-  enumerated in libphy.a; only a fraction is wrapped today.
+  [esp32-c5-v2x](https://github.com/DatanoiseTV/esp32-c5-v2x)
+  (CAM/DENM encoders, GeoNetworking, BTP, asn1c-based codec). That
+  repo depends on this one for everything below the LLC layer.
+- **Monitor-mode capture** of arbitrary 802.11 traffic with
+  per-frame metadata (RSSI, channel, rate, QoS flag, timestamp)
+  forwarded to the host as `RAW_FRAME` events.
+- **CSI-based sensing** (presence, gesture, breathing) with per-frame
+  CSI buffers piped over SDIO.
+- **802.11mc FTM ranging** — single-call initiator with
+  millisecond-resolution distance estimates.
+- **ESP-NOW peer networks** at low latency, no IP overhead, no AP
+  needed — universal across every Wi-Fi-capable Espressif chip.
+- **Thread / Zigbee** when the slave is a C6 / H2 / H4 — same host
+  binary, capability bitmap takes care of the rest.
+- **Channel-busy ratio (CBR)** measurement for spectrum studies.
+- **Manual RX-gain sweeps** for sensitivity characterisation.
+- **Disabling CCA** for back-to-back loopback or PHY conformance work.
+- **Anything else the public esp-hosted API doesn't reach.** The
+  symbol reference enumerates 1366 `phy_*` exports across the chip
+  family — only a fraction is wrapped today.
+
+---
 
 ## Contributing
 
-This is research code. Issues, PRs, "I scoped this and here's what it
-looks like" reports are all welcome. Particularly useful contributions:
+This is research code. Issues, PRs, and "I scoped this and here's
+what it looks like" reports are all welcome. Particularly useful:
 
-- A new RPC for an unwrapped symbol — follow `docs/extending.md`.
-- A test fixture that decodes a real CAM/DENM/etc. captured from a
-  certified station, so we can regress against ground truth.
-- A documented success / failure on different C5 module batches —
-  the on-die radio tweaks vary across silicon revisions.
+- A new RPC for an unwrapped libphy symbol — follow
+  [docs/extending.md](docs/extending.md). The recipe is mechanical:
+  one packed struct + one host stub + one slave handler + one test
+  assertion.
+- Spectrum / scope evidence for what an undocumented symbol actually
+  does on a particular chip.
+- A documented success / failure on different module batches —
+  on-die radio tweaks vary across silicon revisions.
+
+---
 
 ## Acknowledgements
 
@@ -245,6 +283,8 @@ looks like" reports are all welcome. Particularly useful contributions:
 - [opentrafficmap/its-g5-receiver-firmware](https://codeberg.org/opentrafficmap/its-g5-receiver-firmware)
   for documenting the original `phy_11p_set(1, 0)` +
   `phy_change_channel(ch, 1, 0, 0)` bootstrap sequence on the C5.
+
+---
 
 ## License
 
