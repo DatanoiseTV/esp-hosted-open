@@ -9,6 +9,13 @@ int test_proto_sizes(void);
 int test_proto_msgid_namespace(void);
 int test_proto_caps_bitmap(void);
 
+int test_dispatcher_echo_set_channel(void);
+int test_dispatcher_get_phy_rssi(void);
+int test_dispatcher_error_propagation(void);
+int test_dispatcher_timeout(void);
+int test_dispatcher_caps_full_16_bytes(void);
+int test_dispatcher_event_dispatch(void);
+
 typedef int (*test_fn_t)(void);
 
 struct test { const char *name; test_fn_t fn; };
@@ -16,9 +23,15 @@ struct test { const char *name; test_fn_t fn; };
 int main(void)
 {
     struct test tests[] = {
-        { "proto: packed-struct sizes",  test_proto_sizes },
-        { "proto: msg_id namespace",     test_proto_msgid_namespace },
-        { "proto: caps bitmap encoding", test_proto_caps_bitmap },
+        { "proto: packed-struct sizes",          test_proto_sizes },
+        { "proto: msg_id namespace",             test_proto_msgid_namespace },
+        { "proto: caps bitmap encoding",         test_proto_caps_bitmap },
+        { "dispatch: echo set_channel",          test_dispatcher_echo_set_channel },
+        { "dispatch: get_phy_rssi round-trip",   test_dispatcher_get_phy_rssi },
+        { "dispatch: error code propagates",     test_dispatcher_error_propagation },
+        { "dispatch: timeout on no reply",       test_dispatcher_timeout },
+        { "dispatch: full 16-byte caps body",    test_dispatcher_caps_full_16_bytes },
+        { "dispatch: async event delivery",      test_dispatcher_event_dispatch },
     };
     size_t n = sizeof(tests) / sizeof(*tests);
     int failed = 0;

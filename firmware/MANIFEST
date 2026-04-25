@@ -1,70 +1,40 @@
-file:        c5_slave_merged.bin
-chip:        esp32c5
-flash-size:  4 MB
-flash-mode:  dio
-flash-freq:  80 MHz
+## Prebuilt slave firmware images
+##
+## Each binary is a single merged image (bootloader + partition table +
+## ota_data + network_adapter), flashable to offset 0x0 via
+##   firmware/flash.sh <port> <chip>
+## CI rebuilds these on every push and attaches them to release tags.
+
+[c5_slave_merged.bin]
+chip:        esp32c5                                         # Wi-Fi 6 + BLE; 2.4 + 5 GHz
 flash-at:    0x0
-size-bytes:  1585280
-size-human:  1.5 MB
-sha256:      0de1afbab328021723747c638730226903185e67ca81e5fde69a5c71c1af9c40
+sha256:      c630c03bc2a04ca90da06d42def1ebf25fad9d0d95c9bf89ae87cd254bc521b0
 
-upstream:    https://github.com/espressif/esp-hosted-mcu @ f99ee55aea93ab671d9849bd962aa2f10d01f7d5
-idf:         v6.0
-target:      esp32c5
+[c6_slave_merged.bin]
+chip:        esp32c6                                         # Wi-Fi 6 + BLE + 802.15.4; 2.4 GHz only
+flash-at:    0x0
+sha256:      c91ab2e73484b5cb7ef2d6244f65713d1cad55182b06348f4e269743d8b9d4c3
 
-phy-hack:
-  - phy_11p_set(1, 0) armed at boot and on every WIFI_EVENT_WIFI_READY
-  - country set to "01" with WIFI_COUNTRY_POLICY_MANUAL (allows ITS channels)
-  - bootstrap channel = 140, then phy_change_channel(180, 1, 0, 0)
-  - WIFI_PS_NONE
-  - phy_agc_max_gain_set(255), phy_disable_low_rate()
+## Common flash settings (passed by flash.sh):
+##   flash-size:  4 MB
+##   flash-mode:  dio
+##   flash-freq:  80 MHz
+##
+## Source: this repo's slave/ project against ESP-IDF v6.0.
+## Upstream: https://github.com/espressif/esp-hosted-mcu @ f99ee55aea93ab671d9849bd962aa2f10d01f7d5
 
-custom-rpcs:
-  Bound to esp-hosted's peer-data channel (CONFIG_ESP_HOSTED_ENABLE_PEER_DATA_TRANSFER).
-  Host calls esp_hosted_open_*; matching handlers run on the slave.
-  msg_id namespace: 0xC1750000 + ...
-
-  Channel / band / freq:
-    SET_CHANNEL, SET_FREQ, SET_BAND, SET_BANDWIDTH, SET_CHAN_FILT,
-    SET_CHAN14_MIC, SET_COUNTRY_PERM
-  PHY mode / rate:
-    SET_PHY_11P, SET_RATE, SET_LOW_RATE
-  TX power:
-    SET_TX_POWER, SET_MOST_TPW, GET_MOST_TPW
-  RX gain / AGC:
-    SET_RX_GAIN, SET_AGC_MAX_GAIN, RESET_RX_GAIN_TBL
-  CCA / channel-busy:
-    SET_CCA, GET_CCA_COUNTERS, RESET_CCA_COUNT
-  Diagnostics:
-    GET_PHY_RSSI, GET_NOISE_FLOOR, GET_TEMPERATURE
-  CSI / loopback:
-    SET_CSI_DUMP, SET_LOOPBACK
-  BT-radio (nRF24-style hacks):
-    SET_BT_TX_GAIN, SET_BT_FILTER
-  Meta:
-    GET_INFO, GET_CAPS
-
-  Raw 802.11 + 2.4 GHz:
-    TX_80211, SET_PROMISC, SET_PROMISC_FILTER, SET_PROTOCOL, SET_MAC,
-    SET_CSI_ENABLE, FTM_INITIATE
-
-  ESP-NOW (universal):
-    ESPNOW_INIT, ESPNOW_DEINIT, ESPNOW_ADD_PEER, ESPNOW_DEL_PEER,
-    ESPNOW_SEND, ESPNOW_SET_PMK
-
-  802.15.4 (Thread / Zigbee — NOT_SUPPORTED on C5; works on C6/H2/H4):
-    IEEE154_ENABLE, IEEE154_SET_CHAN, IEEE154_SET_PANID,
-    IEEE154_SET_PROMISC, IEEE154_TX_RAW
-
-  Async events (slave -> host):
-    OCB_FRAME, PHY_STATE, RAW_FRAME, CSI, FTM_REPORT,
-    ESPNOW_RX, ESPNOW_TX_STATUS, IEEE154_RX
-
-bluetooth-le:
-  Already exposed by upstream esp-hosted-mcu — see
-  vendor/esp-hosted-mcu/host/esp_hosted_bt.h (HCI bridge) and
-  vendor/esp-hosted-mcu/host/esp_hosted_bluedroid.h (Bluedroid).
-
-defaults:
-  - channel:   CCH (180, 5.900 GHz)
-  - tx-gated:  off (slave does not emit; host is responsible)
+## What's enabled per chip
+##
+## C5  — radio-side knobs available:
+##         channel/freq/band, 802.11p PHY mode, RX gain, AGC, CCA + counters,
+##         TX power, low-rate filter, bandwidth, RSSI, noise floor, temperature,
+##         CSI dump, internal loopback, BT-radio TX gain.
+##         802.11p / 5.9 GHz: phy_11p_set armed at boot, channel = CCH (180).
+##         IEEE154 RPCs return NOT_SUPPORTED (no 802.15.4 silicon).
+##
+## C6  — radio-side knobs available:
+##         channel/freq/band (2.4 GHz only), 802.11p PHY mode, RX gain, AGC,
+##         CCA + counters, TX power, low-rate filter, RSSI, noise floor.
+##         IEEE154 RPCs ENABLED (Thread / Zigbee co-processor).
+##         802.11p RPCs accept the call but the waveform is 2.4 GHz only —
+##         bench-only, not a real V2X solution.

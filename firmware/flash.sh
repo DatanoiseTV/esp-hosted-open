@@ -1,24 +1,25 @@
 #!/usr/bin/env bash
 #
-# One-shot flasher for the C5 slave firmware. No ESP-IDF install needed.
+# One-shot flasher for an esp-hosted-open slave firmware. No ESP-IDF
+# install needed — only `esptool` (`pip install esptool`).
 #
 # Usage:
-#   firmware/flash.sh <serial-port> [baud]
+#   firmware/flash.sh <serial-port> [chip] [baud]
 #
 # Examples:
-#   firmware/flash.sh /dev/cu.usbserial-1410         # macOS, default 460800
-#   firmware/flash.sh /dev/ttyUSB0 921600            # Linux, faster
-#
-# Requires `esptool` (pip install esptool, or via IDF's bundled tooling).
+#   firmware/flash.sh /dev/cu.usbserial-1410                 # default chip=esp32c5
+#   firmware/flash.sh /dev/cu.usbserial-1410 esp32c6         # C6 (Wi-Fi 6 + BLE + 802.15.4)
+#   firmware/flash.sh /dev/ttyUSB0 esp32c5 921600            # Linux, fast
 
 set -euo pipefail
 
 PORT="${1:-}"
-BAUD="${2:-460800}"
+CHIP="${2:-esp32c5}"
+BAUD="${3:-460800}"
 
 if [[ -z "$PORT" ]]; then
-    echo "usage: $0 <serial-port> [baud]" >&2
-    echo "ports likely to be your C5:" >&2
+    echo "usage: $0 <serial-port> [chip] [baud]" >&2
+    echo "  chip defaults to esp32c5; supported: esp32c5, esp32c6" >&2
     if [[ "$OSTYPE" == "darwin"* ]]; then
         ls /dev/cu.usbserial-* /dev/cu.usbmodem* 2>/dev/null | sed 's/^/  /' >&2 || true
     else
@@ -27,10 +28,20 @@ if [[ -z "$PORT" ]]; then
     exit 64
 fi
 
-BIN="$(cd "$(dirname "$0")" && pwd)/c5_slave_merged.bin"
+case "$CHIP" in
+    esp32c5) BIN_NAME="c5_slave_merged.bin" ;;
+    esp32c6) BIN_NAME="c6_slave_merged.bin" ;;
+    *)
+        echo "unsupported chip: $CHIP" >&2
+        echo "available: esp32c5, esp32c6" >&2
+        exit 64
+        ;;
+esac
+
+BIN="$(cd "$(dirname "$0")" && pwd)/$BIN_NAME"
 if [[ ! -f "$BIN" ]]; then
     echo "missing: $BIN" >&2
-    echo "regenerate with: cd examples/p4_c5_hosted/slave_c5 && idf.py build && cp build/c5_slave_merged.bin ../../../firmware/" >&2
+    echo "regenerate with: cd slave && idf.py set-target $CHIP && idf.py build && cp build/${CHIP/esp32/c}_slave_merged.bin ../firmware/" >&2
     exit 65
 fi
 
@@ -41,14 +52,22 @@ fi
 
 ESPTOOL=$(command -v esptool || command -v esptool.py)
 
-echo ">>> flashing $BIN to $PORT @ ${BAUD} baud..."
-"$ESPTOOL" --chip esp32c5 -p "$PORT" -b "$BAUD" \
+echo ">>> flashing $BIN_NAME to $PORT (chip=$CHIP, baud=$BAUD)..."
+"$ESPTOOL" --chip "$CHIP" -p "$PORT" -b "$BAUD" \
     --before default-reset --after hard-reset \
     write-flash --flash-mode dio --flash-size 4MB --flash-freq 80m \
     0x0 "$BIN"
 
 echo
-echo ">>> done. The C5 should now be running the V2X slave firmware:"
-echo "    - SDIO slave transport"
-echo "    - 11p PHY hack armed on boot"
-echo "    - default channel: CCH (180, 5.900 GHz; change via menuconfig + rebuild)"
+echo ">>> done. The slave is now running esp-hosted-open ($CHIP)."
+echo "    - SDIO slave transport, peer-data channel armed"
+case "$CHIP" in
+    esp32c5)
+        echo "    - 11p PHY hack armed at boot, channel = CCH (180, 5.900 GHz)"
+        echo "    - 802.15.4 RPCs return NOT_SUPPORTED (no 15.4 silicon)"
+        ;;
+    esp32c6)
+        echo "    - 802.15.4 RPCs ENABLED (Thread / Zigbee co-processor mode)"
+        echo "    - 802.11p RPCs available, but no 5 GHz radio (2.4 GHz only)"
+        ;;
+esac
