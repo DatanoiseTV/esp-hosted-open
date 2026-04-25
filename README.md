@@ -183,20 +183,27 @@ The slave-side overlay is split across three files for review-ability:
 
 ## What's covered today (and what isn't)
 
-✅ **Verified building** against ESP-IDF v6.0 via CI on every push.
-Slave fits in the C5's 1.875 MB factory partition with 26 % free.
-Host stub adds ~150 B to a P4 binary.
+✅ **Build-verified** against ESP-IDF v6.0 via CI on every push:
+slave for esp32c5, P4 host example, host-runnable proto tests. Slave
+fits in the C5's 1.875 MB factory partition with 26 % free; host
+example is ~580 kB on the P4 (43 % free in a 1 MB partition).
 
-✅ **Verified on hardware** (bench, conducted via 30 dB attenuator
-into a SDR): channel-set to 180 (5.900 GHz), `phy_11p_set(1, 0)`,
-AGC max gain at 255, low-rate filter off. Real 802.11p stations'
-CAM frames decode correctly through the host.
+❌ **No hardware testing has been performed.** Nothing in this repo
+has been put on a scope, an SDR, or against a real ITS / Thread /
+nRF24 / FTM peer. The RPCs compile and the wire protocol round-trips
+in CI; what each one *actually does at the radio level* is inferred
+from `libphy.a` symbol names + community work, not measured. Don't
+trust on-air behaviour until you've verified it yourself.
 
-⚠️ **Untested in the field.** No claims about real-world distance,
-multipath behaviour, or spectrum-mask conformance. The 5.9 GHz
-waveform the C5 emits with these settings is *not* a true 10 MHz
-802.11p signal — it's a 20 MHz Wi-Fi-shaped frame on an ITS channel
-that some 11p front-ends will demodulate.
+⚠️ **Particularly suspect** until proven on hardware:
+
+- Whether `phy_11p_set(1, 0)` produces a waveform that real 802.11p
+  front-ends demodulate. The C5 PHY is a 20 MHz OFDM design; ETSI
+  802.11p uses 10 MHz channels. At best this is a 20-MHz Wi-Fi-shaped
+  frame on a 5.9 GHz channel that *some* 11p radios will accept.
+- The BT-radio TX-gain knob actually emitting on the band you expect.
+- The 802.15.4 path on a C6/H2/H4 (we've never built for those targets).
+- Whether the slave's queued event channel keeps up under load.
 
 ⚠️ **No safety hooks.** A single host-side typo can put the radio
 into states the FCC / ETSI test masks would fail. Lock down RF
