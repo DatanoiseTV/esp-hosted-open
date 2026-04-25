@@ -51,6 +51,23 @@ int test_proto_sizes(void)
     EXPECT(offsetof(phy_rpc_evt_ocb_frame_t, timestamp_us)    == 10);
     EXPECT(offsetof(phy_rpc_evt_ocb_frame_t, data)            == 14);
 
+    /* Raw frame event: rssi(1) ch(1) rate(1) is_qos(1) frame_len(2)
+     *                  reserved(2) timestamp(4) frame[]
+     * Total fixed prefix = 12. */
+    EXPECT(offsetof(phy_rpc_evt_raw_frame_t, frame_len)    == 4);
+    EXPECT(offsetof(phy_rpc_evt_raw_frame_t, timestamp_us) == 8);
+    EXPECT(offsetof(phy_rpc_evt_raw_frame_t, frame)        == 12);
+
+    /* CSI event: rssi(1) ch(1) src_mac(6) csi_len(2) reserved(2)
+     *            timestamp(4) csi[]
+     * Total fixed prefix = 16. */
+    EXPECT(offsetof(phy_rpc_evt_csi_t, src_mac)            == 2);
+    EXPECT(offsetof(phy_rpc_evt_csi_t, csi)                == 16);
+
+    /* FTM report is fixed-size — peer_mac(6) status(1) reserved(1)
+     *                              rtt_raw(4) rtt_est(4) dist_est(4) = 20. */
+    EXPECT(sizeof(phy_rpc_evt_ftm_report_t) == 20);
+
     return 0;
 }
 
@@ -85,6 +102,29 @@ int test_proto_msgid_namespace(void)
     EXPECT(PHY_RPC_REQ_GET_TEMPERATURE   == 0xC1750019u);
     EXPECT(PHY_RPC_REQ_SET_BT_TX_GAIN    == 0xC175001Cu);
     EXPECT(PHY_RPC_REQ_GET_CAPS          == 0xC175001Eu);
+
+    /* "Missing/flaky" set landed in 0x020-0x026. */
+    EXPECT(PHY_RPC_REQ_TX_80211          == 0xC1750020u);
+    EXPECT(PHY_RPC_REQ_SET_PROMISC       == 0xC1750021u);
+    EXPECT(PHY_RPC_REQ_SET_PROMISC_FILTER == 0xC1750022u);
+    EXPECT(PHY_RPC_REQ_SET_PROTOCOL      == 0xC1750023u);
+    EXPECT(PHY_RPC_REQ_SET_MAC           == 0xC1750024u);
+    EXPECT(PHY_RPC_REQ_SET_CSI_ENABLE    == 0xC1750025u);
+    EXPECT(PHY_RPC_REQ_FTM_INITIATE      == 0xC1750026u);
+
+    /* New event ids in 0x003-0x005. */
+    EXPECT(PHY_RPC_EVT_RAW_FRAME         == 0xC175F003u);
+    EXPECT(PHY_RPC_EVT_CSI               == 0xC175F004u);
+    EXPECT(PHY_RPC_EVT_FTM_REPORT        == 0xC175F005u);
+
+    /* ESP-NOW RPCs at 0x030-0x035, 802.15.4 at 0x040-0x044. */
+    EXPECT(PHY_RPC_REQ_ESPNOW_INIT       == 0xC1750030u);
+    EXPECT(PHY_RPC_REQ_ESPNOW_SEND       == 0xC1750034u);
+    EXPECT(PHY_RPC_REQ_IEEE154_ENABLE    == 0xC1750040u);
+    EXPECT(PHY_RPC_REQ_IEEE154_TX_RAW    == 0xC1750044u);
+    EXPECT(PHY_RPC_EVT_ESPNOW_RX         == 0xC175F006u);
+    EXPECT(PHY_RPC_EVT_ESPNOW_TX_STATUS  == 0xC175F007u);
+    EXPECT(PHY_RPC_EVT_IEEE154_RX        == 0xC175F008u);
 
     return 0;
 }

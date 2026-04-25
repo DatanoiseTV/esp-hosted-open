@@ -42,6 +42,19 @@ static uint32_t          s_timeout_ms = 1500;
 static esp_hosted_open_ocb_rx_cb_t s_ocb_cb;
 static void                        *s_ocb_ctx;
 
+static esp_hosted_open_raw_rx_cb_t  s_raw_cb;
+static void                        *s_raw_ctx;
+static esp_hosted_open_csi_cb_t     s_csi_cb;
+static void                        *s_csi_ctx;
+static esp_hosted_open_ftm_cb_t     s_ftm_cb;
+static void                        *s_ftm_ctx;
+static esp_hosted_open_espnow_rx_cb_t s_espnow_rx_cb;
+static void                          *s_espnow_rx_ctx;
+static esp_hosted_open_espnow_tx_cb_t s_espnow_tx_cb;
+static void                          *s_espnow_tx_ctx;
+static esp_hosted_open_ieee154_rx_cb_t s_ieee154_rx_cb;
+static void                           *s_ieee154_rx_ctx;
+
 /* ---------- request/response plumbing ------------------------------ */
 
 static struct slot { /* alias */
@@ -171,6 +184,108 @@ esp_err_t esp_hosted_open_register_ocb_rx_cb(esp_hosted_open_ocb_rx_cb_t cb, voi
     return ESP_OK;
 }
 
+static void on_event_raw(uint32_t msg_id, const uint8_t *data, size_t len, void *ctx)
+{
+    (void)msg_id;
+    if (len < sizeof(phy_rpc_evt_raw_frame_t)) return;
+    const phy_rpc_evt_raw_frame_t *e = (const phy_rpc_evt_raw_frame_t *)data;
+    if (sizeof(*e) + e->frame_len > len) return;
+    if (!s_raw_cb) return;
+    esp_hosted_open_raw_meta_t m = {
+        .rssi_dbm     = e->rssi_dbm,
+        .channel      = e->channel,
+        .rate         = e->rate,
+        .is_qos       = e->is_qos != 0,
+        .timestamp_us = e->timestamp_us,
+    };
+    s_raw_cb(e->frame, e->frame_len, &m, s_raw_ctx);
+}
+
+static void on_event_csi(uint32_t msg_id, const uint8_t *data, size_t len, void *ctx)
+{
+    (void)msg_id;
+    if (len < sizeof(phy_rpc_evt_csi_t)) return;
+    const phy_rpc_evt_csi_t *e = (const phy_rpc_evt_csi_t *)data;
+    if (sizeof(*e) + e->csi_len > len) return;
+    if (!s_csi_cb) return;
+    s_csi_cb(e->csi, e->csi_len, e->rssi_dbm, e->channel, e->src_mac,
+             e->timestamp_us, s_csi_ctx);
+}
+
+static void on_event_ftm(uint32_t msg_id, const uint8_t *data, size_t len, void *ctx)
+{
+    (void)msg_id;
+    if (len < sizeof(phy_rpc_evt_ftm_report_t)) return;
+    const phy_rpc_evt_ftm_report_t *e = (const phy_rpc_evt_ftm_report_t *)data;
+    if (!s_ftm_cb) return;
+    esp_hosted_open_ftm_report_t r = {
+        .status      = e->status,
+        .rtt_raw_ps  = e->rtt_raw_ps,
+        .rtt_est_ps  = e->rtt_est_ps,
+        .dist_est_cm = e->dist_est_cm,
+    };
+    memcpy(r.peer_mac, e->peer_mac, 6);
+    s_ftm_cb(&r, s_ftm_ctx);
+}
+
+esp_err_t esp_hosted_open_register_raw_rx_cb(esp_hosted_open_raw_rx_cb_t cb, void *ctx)
+{ s_raw_cb = cb; s_raw_ctx = ctx; return ESP_OK; }
+
+esp_err_t esp_hosted_open_register_csi_cb(esp_hosted_open_csi_cb_t cb, void *ctx)
+{ s_csi_cb = cb; s_csi_ctx = ctx; return ESP_OK; }
+
+esp_err_t esp_hosted_open_register_ftm_cb(esp_hosted_open_ftm_cb_t cb, void *ctx)
+{ s_ftm_cb = cb; s_ftm_ctx = ctx; return ESP_OK; }
+
+static void on_event_espnow_rx(uint32_t msg_id, const uint8_t *data, size_t len, void *ctx)
+{
+    (void)msg_id;
+    if (len < sizeof(phy_rpc_evt_espnow_rx_t)) return;
+    const phy_rpc_evt_espnow_rx_t *e = (const phy_rpc_evt_espnow_rx_t *)data;
+    if (sizeof(*e) + e->data_len > len) return;
+    if (!s_espnow_rx_cb) return;
+    esp_hosted_open_espnow_meta_t m = {
+        .rssi_dbm = e->rssi_dbm,
+        .channel  = e->channel,
+    };
+    memcpy(m.src_mac, e->src_mac, 6);
+    memcpy(m.dst_mac, e->dst_mac, 6);
+    s_espnow_rx_cb(e->data, e->data_len, &m, s_espnow_rx_ctx);
+}
+
+static void on_event_espnow_tx(uint32_t msg_id, const uint8_t *data, size_t len, void *ctx)
+{
+    (void)msg_id;
+    if (len < sizeof(phy_rpc_evt_espnow_tx_status_t)) return;
+    const phy_rpc_evt_espnow_tx_status_t *e = (const phy_rpc_evt_espnow_tx_status_t *)data;
+    if (s_espnow_tx_cb) s_espnow_tx_cb(e->peer_mac, e->status == 0, s_espnow_tx_ctx);
+}
+
+static void on_event_ieee154_rx(uint32_t msg_id, const uint8_t *data, size_t len, void *ctx)
+{
+    (void)msg_id;
+    if (len < sizeof(phy_rpc_evt_ieee154_rx_t)) return;
+    const phy_rpc_evt_ieee154_rx_t *e = (const phy_rpc_evt_ieee154_rx_t *)data;
+    if (sizeof(*e) + e->frame_len > len) return;
+    if (!s_ieee154_rx_cb) return;
+    esp_hosted_open_ieee154_meta_t m = {
+        .rssi_dbm     = e->rssi_dbm,
+        .lqi          = e->lqi,
+        .channel      = e->channel,
+        .timestamp_us = e->timestamp_us,
+    };
+    s_ieee154_rx_cb(e->frame, e->frame_len, &m, s_ieee154_rx_ctx);
+}
+
+esp_err_t esp_hosted_open_register_espnow_rx_cb(esp_hosted_open_espnow_rx_cb_t cb, void *ctx)
+{ s_espnow_rx_cb = cb; s_espnow_rx_ctx = ctx; return ESP_OK; }
+
+esp_err_t esp_hosted_open_register_espnow_tx_cb(esp_hosted_open_espnow_tx_cb_t cb, void *ctx)
+{ s_espnow_tx_cb = cb; s_espnow_tx_ctx = ctx; return ESP_OK; }
+
+esp_err_t esp_hosted_open_register_ieee154_rx_cb(esp_hosted_open_ieee154_rx_cb_t cb, void *ctx)
+{ s_ieee154_rx_cb = cb; s_ieee154_rx_ctx = ctx; return ESP_OK; }
+
 /* ---------- init / teardown --------------------------------------- */
 
 esp_err_t esp_hosted_open_init(void)
@@ -199,6 +314,16 @@ esp_err_t esp_hosted_open_init(void)
         PHY_RPC_RESP_SET_CSI_DUMP,       PHY_RPC_RESP_SET_LOOPBACK,
         PHY_RPC_RESP_SET_BT_TX_GAIN,     PHY_RPC_RESP_SET_BT_FILTER,
         PHY_RPC_RESP_GET_CAPS,
+        PHY_RPC_RESP_TX_80211,           PHY_RPC_RESP_SET_PROMISC,
+        PHY_RPC_RESP_SET_PROMISC_FILTER, PHY_RPC_RESP_SET_PROTOCOL,
+        PHY_RPC_RESP_SET_MAC,            PHY_RPC_RESP_SET_CSI_ENABLE,
+        PHY_RPC_RESP_FTM_INITIATE,
+        PHY_RPC_RESP_ESPNOW_INIT,        PHY_RPC_RESP_ESPNOW_DEINIT,
+        PHY_RPC_RESP_ESPNOW_ADD_PEER,    PHY_RPC_RESP_ESPNOW_DEL_PEER,
+        PHY_RPC_RESP_ESPNOW_SEND,        PHY_RPC_RESP_ESPNOW_SET_PMK,
+        PHY_RPC_RESP_IEEE154_ENABLE,     PHY_RPC_RESP_IEEE154_SET_CHAN,
+        PHY_RPC_RESP_IEEE154_SET_PANID,  PHY_RPC_RESP_IEEE154_SET_PROMISC,
+        PHY_RPC_RESP_IEEE154_TX_RAW,
     };
     for (size_t i = 0; i < sizeof(resp_ids) / sizeof(*resp_ids); i++) {
         esp_err_t err = esp_hosted_register_custom_callback(resp_ids[i], on_response, NULL);
@@ -207,7 +332,13 @@ esp_err_t esp_hosted_open_init(void)
             return err;
         }
     }
-    ESP_ERROR_CHECK(esp_hosted_register_custom_callback(PHY_RPC_EVT_OCB_FRAME, on_event_ocb, NULL));
+    ESP_ERROR_CHECK(esp_hosted_register_custom_callback(PHY_RPC_EVT_OCB_FRAME,  on_event_ocb, NULL));
+    ESP_ERROR_CHECK(esp_hosted_register_custom_callback(PHY_RPC_EVT_RAW_FRAME,  on_event_raw, NULL));
+    ESP_ERROR_CHECK(esp_hosted_register_custom_callback(PHY_RPC_EVT_CSI,        on_event_csi, NULL));
+    ESP_ERROR_CHECK(esp_hosted_register_custom_callback(PHY_RPC_EVT_FTM_REPORT, on_event_ftm, NULL));
+    ESP_ERROR_CHECK(esp_hosted_register_custom_callback(PHY_RPC_EVT_ESPNOW_RX,        on_event_espnow_rx, NULL));
+    ESP_ERROR_CHECK(esp_hosted_register_custom_callback(PHY_RPC_EVT_ESPNOW_TX_STATUS, on_event_espnow_tx, NULL));
+    ESP_ERROR_CHECK(esp_hosted_register_custom_callback(PHY_RPC_EVT_IEEE154_RX,       on_event_ieee154_rx, NULL));
 
     ESP_LOGI(TAG, "esp-hosted-open PHY RPC layer up");
     return ESP_OK;
@@ -435,4 +566,177 @@ bool esp_hosted_open_has_capability(uint32_t request_msg_id, const uint8_t caps[
     uint32_t low = request_msg_id & 0xFFu;
     if (low > 0x1F) return false;
     return (caps[low / 8] & (1u << (low % 8))) != 0;
+}
+
+/* ---------- raw TX / promisc / protocol / MAC / CSI / FTM -------- */
+
+esp_err_t esp_hosted_open_tx_80211(uint8_t wifi_if, const uint8_t *frame,
+                                   size_t len, bool en_seq_nr)
+{
+    if (!frame || !len || len > 1500) return ESP_ERR_INVALID_ARG;
+    /* Build header(8) + frame */
+    size_t total = 8 + len;
+    uint8_t *body = malloc(total);
+    if (!body) return ESP_ERR_NO_MEM;
+    body[0] = wifi_if;
+    body[1] = en_seq_nr ? 1 : 0;
+    body[2] = body[3] = 0;          /* reserved */
+    body[4] = (uint8_t)(len & 0xFF);
+    body[5] = (uint8_t)((len >> 8) & 0xFF);
+    body[6] = body[7] = 0;
+    /* But we need to send the cits header (op_id) too, so use do_call's
+     * own framing. The first 4 bytes added by do_call's wrapper are the
+     * op_id; what we put in here is the 8-byte body header + frame. */
+    /* Combine into one buffer for the do_call body argument. */
+    uint8_t *full = malloc(8 + len);
+    if (!full) { free(body); return ESP_ERR_NO_MEM; }
+    full[0] = wifi_if;
+    full[1] = en_seq_nr ? 1 : 0;
+    full[2] = full[3] = 0;
+    full[4] = (uint8_t)(len & 0xFF);
+    full[5] = (uint8_t)((len >> 8) & 0xFF);
+    full[6] = full[7] = 0;
+    memcpy(full + 8, frame, len);
+    free(body);
+    esp_err_t err = do_call(PHY_RPC_REQ_TX_80211, PHY_RPC_RESP_TX_80211,
+                            full, 8 + len, NULL, 0, NULL);
+    free(full);
+    return err;
+}
+
+esp_err_t esp_hosted_open_set_promisc(bool enable)
+{ ONE_BYTE_REQ(PHY_RPC_REQ_SET_PROMISC, PHY_RPC_RESP_SET_PROMISC, uint8_t, enable ? 1 : 0); }
+
+esp_err_t esp_hosted_open_set_promisc_filter(uint32_t filter_mask)
+{
+    return do_call(PHY_RPC_REQ_SET_PROMISC_FILTER, PHY_RPC_RESP_SET_PROMISC_FILTER,
+                   &filter_mask, sizeof(filter_mask), NULL, 0, NULL);
+}
+
+esp_err_t esp_hosted_open_set_protocol(uint8_t wifi_if, uint8_t protocol_mask)
+{
+    struct __attribute__((packed)) { uint8_t mask, iface, _r[2]; } body =
+        { protocol_mask, wifi_if, {0, 0} };
+    return do_call(PHY_RPC_REQ_SET_PROTOCOL, PHY_RPC_RESP_SET_PROTOCOL,
+                   &body, sizeof(body), NULL, 0, NULL);
+}
+
+esp_err_t esp_hosted_open_set_mac(uint8_t wifi_if, const uint8_t mac[6])
+{
+    if (!mac) return ESP_ERR_INVALID_ARG;
+    struct __attribute__((packed)) { uint8_t iface, m[6], _r; } body;
+    body.iface = wifi_if;
+    memcpy(body.m, mac, 6);
+    body._r = 0;
+    return do_call(PHY_RPC_REQ_SET_MAC, PHY_RPC_RESP_SET_MAC,
+                   &body, sizeof(body), NULL, 0, NULL);
+}
+
+esp_err_t esp_hosted_open_set_csi_enable(bool enable)
+{ ONE_BYTE_REQ(PHY_RPC_REQ_SET_CSI_ENABLE, PHY_RPC_RESP_SET_CSI_ENABLE, uint8_t, enable ? 1 : 0); }
+
+esp_err_t esp_hosted_open_ftm_initiate(const uint8_t peer_mac[6],
+                                       uint8_t frames_count,
+                                       uint8_t burst_period_100ms,
+                                       uint8_t channel)
+{
+    if (!peer_mac) return ESP_ERR_INVALID_ARG;
+    struct __attribute__((packed)) {
+        uint8_t mac[6], frames, period, ch, _r[3];
+    } body;
+    memcpy(body.mac, peer_mac, 6);
+    body.frames = frames_count;
+    body.period = burst_period_100ms;
+    body.ch     = channel;
+    body._r[0] = body._r[1] = body._r[2] = 0;
+    return do_call(PHY_RPC_REQ_FTM_INITIATE, PHY_RPC_RESP_FTM_INITIATE,
+                   &body, sizeof(body), NULL, 0, NULL);
+}
+
+/* ---------- ESP-NOW -------------------------------------------- */
+
+esp_err_t esp_hosted_open_espnow_init(void)
+{ return do_call(PHY_RPC_REQ_ESPNOW_INIT, PHY_RPC_RESP_ESPNOW_INIT, NULL, 0, NULL, 0, NULL); }
+
+esp_err_t esp_hosted_open_espnow_deinit(void)
+{ return do_call(PHY_RPC_REQ_ESPNOW_DEINIT, PHY_RPC_RESP_ESPNOW_DEINIT, NULL, 0, NULL, 0, NULL); }
+
+esp_err_t esp_hosted_open_espnow_set_pmk(const uint8_t pmk[16])
+{
+    if (!pmk) return ESP_ERR_INVALID_ARG;
+    return do_call(PHY_RPC_REQ_ESPNOW_SET_PMK, PHY_RPC_RESP_ESPNOW_SET_PMK,
+                   pmk, 16, NULL, 0, NULL);
+}
+
+esp_err_t esp_hosted_open_espnow_add_peer(const uint8_t peer_mac[6],
+                                          const uint8_t lmk[16],
+                                          uint8_t channel, uint8_t wifi_if, bool encrypt)
+{
+    if (!peer_mac) return ESP_ERR_INVALID_ARG;
+    struct __attribute__((packed)) {
+        uint8_t mac[6]; uint8_t lmk[16]; uint8_t ch; uint8_t iface; uint8_t enc; uint8_t _r;
+    } body;
+    memcpy(body.mac, peer_mac, 6);
+    if (lmk) memcpy(body.lmk, lmk, 16); else memset(body.lmk, 0, 16);
+    body.ch = channel; body.iface = wifi_if; body.enc = encrypt ? 1 : 0; body._r = 0;
+    return do_call(PHY_RPC_REQ_ESPNOW_ADD_PEER, PHY_RPC_RESP_ESPNOW_ADD_PEER,
+                   &body, sizeof(body), NULL, 0, NULL);
+}
+
+esp_err_t esp_hosted_open_espnow_del_peer(const uint8_t peer_mac[6])
+{
+    if (!peer_mac) return ESP_ERR_INVALID_ARG;
+    return do_call(PHY_RPC_REQ_ESPNOW_DEL_PEER, PHY_RPC_RESP_ESPNOW_DEL_PEER,
+                   peer_mac, 6, NULL, 0, NULL);
+}
+
+esp_err_t esp_hosted_open_espnow_send(const uint8_t peer_mac[6],
+                                      const uint8_t *data, size_t len)
+{
+    if (!peer_mac || !data || !len || len > 250) return ESP_ERR_INVALID_ARG;
+    size_t total = 6 + 2 + len;
+    uint8_t *body = malloc(total);
+    if (!body) return ESP_ERR_NO_MEM;
+    memcpy(body, peer_mac, 6);
+    body[6] = (uint8_t)(len & 0xFF);
+    body[7] = (uint8_t)((len >> 8) & 0xFF);
+    memcpy(body + 8, data, len);
+    esp_err_t err = do_call(PHY_RPC_REQ_ESPNOW_SEND, PHY_RPC_RESP_ESPNOW_SEND,
+                            body, total, NULL, 0, NULL);
+    free(body);
+    return err;
+}
+
+/* ---------- 802.15.4 ------------------------------------------- */
+
+esp_err_t esp_hosted_open_ieee154_enable(bool enable)
+{ ONE_BYTE_REQ(PHY_RPC_REQ_IEEE154_ENABLE, PHY_RPC_RESP_IEEE154_ENABLE, uint8_t, enable ? 1 : 0); }
+
+esp_err_t esp_hosted_open_ieee154_set_channel(uint8_t channel)
+{ ONE_BYTE_REQ(PHY_RPC_REQ_IEEE154_SET_CHAN, PHY_RPC_RESP_IEEE154_SET_CHAN, uint8_t, channel); }
+
+esp_err_t esp_hosted_open_ieee154_set_pan_id(uint16_t pan_id)
+{
+    return do_call(PHY_RPC_REQ_IEEE154_SET_PANID, PHY_RPC_RESP_IEEE154_SET_PANID,
+                   &pan_id, sizeof(pan_id), NULL, 0, NULL);
+}
+
+esp_err_t esp_hosted_open_ieee154_set_promiscuous(bool enable)
+{ ONE_BYTE_REQ(PHY_RPC_REQ_IEEE154_SET_PROMISC, PHY_RPC_RESP_IEEE154_SET_PROMISC, uint8_t, enable ? 1 : 0); }
+
+esp_err_t esp_hosted_open_ieee154_tx_raw(const uint8_t *frame, size_t len, bool cca)
+{
+    if (!frame || !len || len > 127) return ESP_ERR_INVALID_ARG;
+    size_t total = 4 + len;
+    uint8_t *body = malloc(total);
+    if (!body) return ESP_ERR_NO_MEM;
+    body[0] = cca ? 1 : 0;
+    body[1] = 0;
+    body[2] = (uint8_t)(len & 0xFF);
+    body[3] = (uint8_t)((len >> 8) & 0xFF);
+    memcpy(body + 4, frame, len);
+    esp_err_t err = do_call(PHY_RPC_REQ_IEEE154_TX_RAW, PHY_RPC_RESP_IEEE154_TX_RAW,
+                            body, total, NULL, 0, NULL);
+    free(body);
+    return err;
 }

@@ -76,8 +76,29 @@ returns synchronously with `esp_err_t`. The full set of RPCs today:
 | `get_phy_rssi(int8_t *)`         | `phy_get_sigrssi` (fallback `phy_get_rssi`) |
 | `get_info(...)`                  | dumps current slave state for debugging |
 
-Plus an async event channel from slave to host for forwarding raw
-captured 802.11 frames (`PHY_RPC_EVT_OCB_FRAME`).
+Plus async event channels from slave to host for forwarding raw 802.11
+frames, CSI captures, FTM reports, ESP-NOW receives, and 802.15.4
+frames (when running on a chip with that radio).
+
+### All wireless tech the C5 (and friends) can do
+
+This repo aims to expose **everything** the silicon can transmit and
+receive, not just Wi-Fi:
+
+| Stack            | Coverage                                    | Where |
+|------------------|---------------------------------------------|-------|
+| 802.11 a/g/n/ax  | full (channel, freq, band, bandwidth, rate, raw TX/RX, monitor) | this repo |
+| 802.11p OCB      | best-effort via `phy_11p_set` + `phy_change_channel`             | this repo |
+| 802.11mc FTM     | initiator API + report event                                     | this repo |
+| ESP-NOW          | init, peers, send, RX/TX events                                  | this repo |
+| 802.15.4 / Thread / Zigbee | enable, channel (11–26), pan id, promisc, TX raw, RX events. Works on C6/H2/H4; returns NOT_SUPPORTED on C5/S2/S3/C2/C3 | this repo |
+| Bluetooth LE / HCI | full HCI bridge (`esp_hosted_bt.h`) and Bluedroid stack (`esp_hosted_bluedroid.h`) | upstream esp-hosted |
+
+The C5 itself is Wi-Fi 6 + BLE only (no 802.15.4 silicon), so
+`ieee802154_*` calls return NOT_SUPPORTED on the prebuilt slave
+binary in `firmware/`. To use Thread/Zigbee, swap the slave for a C6
+or H2 module — the same host code works unchanged thanks to the
+runtime capability bitmap exposed by `get_caps`.
 
 ## Architecture
 

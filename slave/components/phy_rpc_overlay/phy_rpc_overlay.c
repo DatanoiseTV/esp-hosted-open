@@ -22,6 +22,8 @@
 #include "esp_hosted_coprocessor.h"
 
 extern void phy_rpc_handlers_register(void);
+extern void phy_rpc_extras_register(void);
+extern void phy_rpc_wireless_register(void);
 
 static const char *TAG = "phy_rpc_slave";
 
@@ -93,6 +95,8 @@ void app_main(void)
      * etc.) on top of esp-hosted's custom-data channel. Requires
      * CONFIG_ESP_HOSTED_ENABLE_PEER_DATA_TRANSFER=y on both sides. */
     phy_rpc_handlers_register();
+    phy_rpc_extras_register();
+    phy_rpc_wireless_register();
 
     ESP_LOGI(TAG, "slave ready: ITS ch %u, 11p mode armed, RPCs live",
              CONFIG_PHY_RPC_OVERLAY_CHANNEL);

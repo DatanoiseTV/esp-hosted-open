@@ -4,9 +4,9 @@ flash-size:  4 MB
 flash-mode:  dio
 flash-freq:  80 MHz
 flash-at:    0x0
-size-bytes:  1561584
+size-bytes:  1585280
 size-human:  1.5 MB
-sha256:      55ce02867548ceae84e2b96fcc663266620c0608cad3d3fb5f13349fbb6c77c0
+sha256:      0de1afbab328021723747c638730226903185e67ca81e5fde69a5c71c1af9c40
 
 upstream:    https://github.com/espressif/esp-hosted-mcu @ f99ee55aea93ab671d9849bd962aa2f10d01f7d5
 idf:         v6.0
@@ -21,13 +21,49 @@ phy-hack:
 
 custom-rpcs:
   Bound to esp-hosted's peer-data channel (CONFIG_ESP_HOSTED_ENABLE_PEER_DATA_TRANSFER).
-  Host calls esp_hosted_open_*; the matching handlers run on the slave.
+  Host calls esp_hosted_open_*; matching handlers run on the slave.
   msg_id namespace: 0xC1750000 + ...
-    SET_CHANNEL, SET_PHY_11P, SET_TX_POWER, SET_RX_GAIN, SET_AGC_MAX_GAIN,
-    SET_CCA, GET_CCA_COUNTERS, RESET_CCA_COUNT, SET_LOW_RATE,
-    SET_BANDWIDTH, GET_PHY_RSSI, SET_COUNTRY_PERM, GET_INFO
-  Plus async event:
-    OCB_FRAME (slave forwards a captured CAM/DENM payload to the host)
+
+  Channel / band / freq:
+    SET_CHANNEL, SET_FREQ, SET_BAND, SET_BANDWIDTH, SET_CHAN_FILT,
+    SET_CHAN14_MIC, SET_COUNTRY_PERM
+  PHY mode / rate:
+    SET_PHY_11P, SET_RATE, SET_LOW_RATE
+  TX power:
+    SET_TX_POWER, SET_MOST_TPW, GET_MOST_TPW
+  RX gain / AGC:
+    SET_RX_GAIN, SET_AGC_MAX_GAIN, RESET_RX_GAIN_TBL
+  CCA / channel-busy:
+    SET_CCA, GET_CCA_COUNTERS, RESET_CCA_COUNT
+  Diagnostics:
+    GET_PHY_RSSI, GET_NOISE_FLOOR, GET_TEMPERATURE
+  CSI / loopback:
+    SET_CSI_DUMP, SET_LOOPBACK
+  BT-radio (nRF24-style hacks):
+    SET_BT_TX_GAIN, SET_BT_FILTER
+  Meta:
+    GET_INFO, GET_CAPS
+
+  Raw 802.11 + 2.4 GHz:
+    TX_80211, SET_PROMISC, SET_PROMISC_FILTER, SET_PROTOCOL, SET_MAC,
+    SET_CSI_ENABLE, FTM_INITIATE
+
+  ESP-NOW (universal):
+    ESPNOW_INIT, ESPNOW_DEINIT, ESPNOW_ADD_PEER, ESPNOW_DEL_PEER,
+    ESPNOW_SEND, ESPNOW_SET_PMK
+
+  802.15.4 (Thread / Zigbee — NOT_SUPPORTED on C5; works on C6/H2/H4):
+    IEEE154_ENABLE, IEEE154_SET_CHAN, IEEE154_SET_PANID,
+    IEEE154_SET_PROMISC, IEEE154_TX_RAW
+
+  Async events (slave -> host):
+    OCB_FRAME, PHY_STATE, RAW_FRAME, CSI, FTM_REPORT,
+    ESPNOW_RX, ESPNOW_TX_STATUS, IEEE154_RX
+
+bluetooth-le:
+  Already exposed by upstream esp-hosted-mcu — see
+  vendor/esp-hosted-mcu/host/esp_hosted_bt.h (HCI bridge) and
+  vendor/esp-hosted-mcu/host/esp_hosted_bluedroid.h (Bluedroid).
 
 defaults:
   - channel:   CCH (180, 5.900 GHz)

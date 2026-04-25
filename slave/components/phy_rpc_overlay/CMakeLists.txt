@@ -2,6 +2,8 @@ idf_component_register(
     SRCS
         "phy_rpc_overlay.c"
         "phy_rpc_handlers.c"
+        "phy_rpc_extras.c"
+        "phy_rpc_wireless.c"
     INCLUDE_DIRS
         "."
         # The shared wire protocol lives in the parent repo so host and
