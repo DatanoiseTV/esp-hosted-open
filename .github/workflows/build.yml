@@ -19,7 +19,7 @@ jobs:
     name: build P4 host example (SDIO)
     runs-on: ubuntu-latest
     container:
-      image: espressif/idf:release-v5.5
+      image: espressif/idf:release-v6.0
     steps:
       - uses: actions/checkout@v4
       - name: idf.py build (esp32p4)
@@ -33,7 +33,7 @@ jobs:
     name: slave (${{ matrix.chip }})
     runs-on: ubuntu-latest
     container:
-      image: espressif/idf:release-v5.5
+      image: espressif/idf:release-v6.0
     strategy:
       fail-fast: false
       matrix:
@@ -73,7 +73,9 @@ jobs:
         working-directory: slave
         run: |
           . $IDF_PATH/export.sh
-          esptool --chip ${{ matrix.chip }} merge-bin \
+          # Use `python -m esptool`: portable across IDF v5.x (esptool.py 4.x)
+          # and v6.x (esptool 5.x renamed binary).
+          python -m esptool --chip ${{ matrix.chip }} merge-bin \
             -o build/${{ matrix.short }}_slave_merged.bin \
             --flash-mode dio --flash-size 4MB --flash-freq 80m \
             ${{ matrix.merge_args }}
