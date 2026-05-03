@@ -12,7 +12,7 @@ jobs:
     name: host tests (no IDF)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: make -C tests/host test
 
   host-example:
@@ -21,7 +21,7 @@ jobs:
     container:
       image: espressif/idf:release-v6.0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: idf.py build (esp32p4)
         working-directory: examples/host_p4_demo
         run: |
@@ -58,7 +58,7 @@ jobs:
               0xd000 build/ota_data_initial.bin
               0x10000 build/network_adapter.bin
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: idf.py set-target ${{ matrix.chip }}
         working-directory: slave
         run: |
@@ -80,13 +80,13 @@ jobs:
             --flash-mode dio --flash-size 4MB --flash-freq 80m \
             ${{ matrix.merge_args }}
           shasum -a 256 build/${{ matrix.short }}_slave_merged.bin
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.short }}_slave_merged
           path: slave/build/${{ matrix.short }}_slave_merged.bin
           retention-days: 90
       - name: attach to release (tags only)
         if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: slave/build/${{ matrix.short }}_slave_merged.bin
